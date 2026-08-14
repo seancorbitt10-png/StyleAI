@@ -1,9 +1,9 @@
 # StyleAI V1 Implementation Plan
 
-**Phase:** 0 — Discovery  
-**Status:** Awaiting owner approval before substantial implementation  
+**Phase:** 1 — Foundation (in progress)  
+**Status:** Phase 0 approved 2026-08-14 with corrections. See [ARCHITECTURE.md](./ARCHITECTURE.md) owner-approved corrections.  
 **Date:** 2026-08-14  
-**Repository state:** Greenfield. `main` contained only the product specification.
+**Repository state:** Greenfield at Phase 0; Phase 1 adds the universal app, auth, schema, RLS, interfaces, analytics, entitlements, CI.
 
 This document is the concrete plan required before writing application code. It is not a promise that V1 is complete. V1 is complete only when the acceptance criteria in [PRODUCT_SPEC.md](./PRODUCT_SPEC.md) have been tested against real services.
 
@@ -51,31 +51,27 @@ The specification lists many package names. Creating all of them on day one adds
 
 | Package | Lives there because |
 | --- | --- |
-| `packages/core` | Outfit scoring, constraint parsing, ranking, schemas, and provider *interfaces* must be testable without UI |
-| `packages/ui` | Tokens and components must be reusable across screens |
-| `apps/app/src/server` | AI, product, billing, and admin adapters — **server-only**, never imported by client components |
-| `apps/app/src/app` | Expo Router screens and API routes |
-
-Auth, analytics, billing *implementations* are modules under `src/server`, behind interfaces defined in `packages/core`. They can be moved into packages later if a second runtime needs them. They will not be imported from UI files.
+| `packages/core` | Domain, application services, Zod schemas, provider **interfaces**. No Expo, OpenAI, or retailer SDKs. Independently testable. |
+| `packages/ui` | Tokens and components reusable across screens |
+| `apps/app/app/api` | Thin HTTP adapters (Expo API Routes today; replaceable) |
+| `apps/app/src/server` | Composition root that wires adapters into core services |
+| `apps/app/src/adapters` | Provider implementations (eBay, OpenAI, …) — never imported by domain |
 
 ### Runtime split
 
 ```
-Client (Expo)                         Server (Expo Router API routes)
----------------                       --------------------------------
-Auth session (Supabase JS)            Verify JWT
-Image picker / camera                 Validate + upload to Storage
-Render wardrobe / outfits             AI analysis (OpenAI)
-Call /api/* for privileged work       Outfit pipeline
-Never holds secret keys               Product search (eBay)
-                                      Entitlement checks
-                                      Usage ledger
-                                      Rate limits
+Client (Expo)
+  → Application API (HTTP adapter)
+    → Application services (entitlements, usage, analytics, outfit)
+      → Domain (filter, score, required-category gaps, rank)
+      → Provider interfaces
+        → Providers (OpenAI, eBay, future retailers, billing)
+
+Never holds secret keys on the client.
+HTTP host can change without rewriting domain logic.
 ```
 
-Supabase is used for Postgres, Auth, Storage, and Row Level Security. It is not used as the primary application server. Privileged work runs in Expo API routes (`expo.web.output = "server"`) so the same TypeScript, Zod schemas, and domain code serve web and native.
-
-Native production builds set the Expo Router `origin` to the deployed API host so iOS and Android call the same server routes as web.
+Supabase is Postgres, Auth, Storage, and RLS — not the application server. Native production builds set Expo Router `origin` to the API host.
 
 ---
 
@@ -83,7 +79,7 @@ Native production builds set the Expo Router `origin` to the deployed API host s
 
 | Layer | Choice | Why |
 | --- | --- | --- |
-| App | Expo SDK **54**, Expo Router, TypeScript strict | Official universal stack. SDK 54 still matches Expo Go on physical devices during the SDK 57 transition. API routes and `expo-server` exist from SDK 54. |
+| App | Expo SDK **57**, Expo Router, TypeScript strict | Current official `create-expo-app` default. API routes via `web.output = server`. |
 | Language | TypeScript `strict: true` | Required |
 | Validation | Zod | Runtime schemas for AI output, API input, env vars |
 | UI | React Native + React Native Web | One component model |
@@ -91,10 +87,11 @@ Native production builds set the Expo Router `origin` to the deployed API host s
 | Database | PostgreSQL via Supabase | Auth + RLS + Storage in one product |
 | Auth | Supabase Auth (email/password + Google) | Real accounts; abstraction so the provider can change |
 | Files | Supabase Storage, private buckets, signed URLs | User photos are sensitive |
-| Server | Expo Router API routes | Same repo, same types, secrets stay server-side |
-| AI | Provider interfaces; **OpenAI** as first adapter | Strict structured outputs; API data not used for training by default |
-| Products | `ProductProvider` interface; **eBay Browse API** as first adapter | Official API, real listings, real URLs, free developer account |
-| Billing | Entitlement service; RevenueCat + Stripe later | Server-verified plans; IAP-compliant on mobile |
+| Server | Host-agnostic `@styleai/core` + HTTP adapter (Expo API Routes first) | Domain stays portable |
+| AI | `VisionProvider` + `ReasoningProvider`; OpenAI first adapter; `gpt-4.1-mini` first **candidate** | Replaceable models; measure cost in ledger |
+| Products | `ProductProvider` + registry; eBay **first adapter only** | Official real listings; not the long-term retailer strategy |
+| Billing | `EntitlementService` in foundation; RevenueCat/Stripe later behind `BillingProvider` | No live payments until approved |
+| Analytics | First-party `analytics_events` + allowlist | Funnel from day one |
 | Tests | Vitest (unit/integration), Playwright (web E2E) | Fast domain tests; one real user-journey E2E |
 | Lint/format | ESLint flat config (`eslint-config-expo`) + Prettier | Official Expo tooling |
 | CI | GitHub Actions | typecheck, lint, unit tests, web build |
@@ -170,7 +167,7 @@ Every AI call:
 3. Is rejected (user-visible error) if validation fails after retry.
 4. Never writes unvalidated model output to the database.
 
-Default adapter: **OpenAI** (`gpt-4.1-mini` for vision and structured reasoning). Reasons: strict JSON schema adherence, vision, and API content is not used for training by default.
+Initial adapter: **OpenAI**. Initial candidate model: `gpt-4.1-mini` (not a permanent commitment). Domain code never hardcodes a model ID. Costs are measured via `ai_requests` / `usage_events`. Development spend cap: **$20** — stop and request approval before exceeding it.
 
 **Gemini Free is rejected for user photos.** Google's free Gemini tier uses content to improve Google's products. StyleAI processes personal photographs. Paid Gemini remains a future adapter, not the V1 default.
 
@@ -191,9 +188,9 @@ Outfit gap
   → return Product { product_url, affiliate_url? }
 ```
 
-The outfit engine never knows the retailer. It receives normalized `Product` objects.
+The outfit engine, ranking engine, product UI, and database **domain** models never know the retailer. They receive normalized `Product` objects. eBay-specific mapping stays inside `EbayProductProvider`.
 
-V1 provider: **eBay Browse API** (official, real item URLs, price, image, category filters, free developer keys, default ~5,000 calls/day).
+**Long-term requirement: broad retailer coverage.** eBay Browse API is the first real adapter used to validate the pipeline (official item URLs, price, image, category filters, free developer keys, default ~5,000 calls/day). It is not the retailer strategy.
 
 Not used in V1 production:
 
@@ -210,22 +207,19 @@ Full detail: [PRODUCT_DATA.md](./PRODUCT_DATA.md).
 
 ## 7. Billing architecture
 
+Entitlement and plan architecture ships in **foundation (Phase 1)**. Live payments stay off.
+
 ```
-Client                    Server
-------                    ------
-Show plan catalog  →      plan_catalog (config)
-Purchase / restore →      StoreKit / Play / Stripe via RevenueCat
-Never trust client  →     entitlements row + webhook
-Usage check        →      usage_events vs plan limits
+Mobile IAP  → RevenueCat  → EntitlementService
+Web pay     → Stripe      → EntitlementService
 ```
 
-V1 ships the **entitlement and metering system** even before real purchases are turned on:
+RevenueCat and Stripe are `BillingProvider` implementations. Domain code depends on `EntitlementService` + `plan_catalog` + `usage_events` only.
 
-- Free plan limits from environment/config
-- Server rejects over-limit AI and product calls
+- Free plan limits from catalog
+- Server rejects over-limit operations
 - Pro is granted only from server-side entitlement records
-
-Collecting money requires Apple ($99/year), Google Play ($25 once), Stripe, and RevenueCat. Those are **not** activated in Phase 0–4. Phase 5 implements the abstraction and UI. Live IAP waits for explicit approval.
+- No paid billing service is activated without explicit approval
 
 Full detail: [BILLING.md](./BILLING.md).
 
@@ -299,29 +293,29 @@ Full detail: [TESTING.md](./TESTING.md).
 
 Work stops at any **COST CHECK** that needs owner money or a paid account.
 
-### Phase 0 — Discovery (this PR)
+### Phase 0 — Discovery (complete)
 
-Inspect repo, research current docs, publish plan, list costs. **No application code.**
+Inspect repo, research current docs, publish plan, list costs.
 
-### Phase 1 — Foundation
+### Phase 1 — Foundation (this PR)
 
-Monorepo, Expo app shell, tokens, auth screens, Supabase schema + RLS, storage, env validation, logging, CI, unit-test harness. Verify signup/login/logout against a **user-created** free Supabase project (or skip live verify if the owner has not created one yet — then only schema and tests).
+Monorepo, Expo app, tokens, **real auth**, schema + **RLS**, private storage, env validation, logging, CI, tests, **provider interfaces**, **entitlement/plan architecture**, **analytics funnel**. Live verify against a user-created **Supabase Free** project when keys exist; otherwise fail closed. No fake production behavior.
 
 ### Phase 2 — Profile + wardrobe
 
-Onboarding, profile, image pipeline, clothing analysis API (blocked on OpenAI key approval), correction UI, wardrobe CRUD, multi-item review flow.
+Onboarding, profile, image pipeline, clothing analysis (OpenAI adapter; **$20 cap** — stop if it would be exceeded), correction UI, wardrobe CRUD, multi-item review.
 
 ### Phase 3 — Outfit engine
 
-Constraint parse, retrieval, candidates, scoring, gaps, save/regenerate/feedback. Can run with wardrobe only; product stage is a typed empty result until Phase 4.
+Constraint parse, retrieval, candidates, scoring, **required-category gaps only**, save/regenerate/feedback. Prefer owned items. Product stage is a typed result via `ProductProvider`; no retailer-specific logic.
 
 ### Phase 4 — Product engine
 
-eBay adapter, normalize, cache, freshness, ranking, product UI, affiliate fields. Blocked on eBay app keys (free) and owner approval.
+First `ProductProvider` implementation (eBay adapter), normalize, cache, freshness, ranking (no affiliate signal), product UI. Additional retailers are later registrations. Blocked on eBay app keys (free).
 
-### Phase 5 — Monetization
+### Phase 5 — Monetization UI + billing adapters
 
-Plan catalog, usage metering enforcement, entitlement service, billing UI. Live IAP/Stripe blocked on paid developer accounts.
+Billing UI, webhook handlers. Live IAP/Stripe **not** activated without approval. Entitlements already exist from Phase 1.
 
 ### Phase 6 — Hardening
 

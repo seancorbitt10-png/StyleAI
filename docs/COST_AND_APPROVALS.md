@@ -16,9 +16,9 @@ Prices below were checked against official pages on 2026-08-14. Recheck before p
 | A1 | Create Supabase project | 1 live auth | Free (dev) | Owner creates project, pastes URL + anon key + service role into GitHub/EAS secrets — **not into git** |
 | A2 | Google Cloud OAuth clients | Google login | Free | Owner creates Web/iOS/Android client IDs |
 | A3 | Expo account | 7 builds | Free | Owner logs into EAS |
-| A4 | OpenAI API | 2 live analysis | **Paid usage** | Approve spend cap (recommend $20–50/mo while developing) |
+| A4 | OpenAI API | 2 live analysis | **Paid usage** | Approved with **$20 development cap**. Stop and re-ask before exceeding. |
 | A5 | eBay developer app | 4 live products | Free | Owner registers at developer.ebay.com |
-| A6 | Supabase Pro | Production uptime | **$25/mo** | Before real users |
+| A6 | Supabase Pro | Production uptime | **$25/mo** | **Do not upgrade automatically.** Free plan for development. Idle pause is acceptable. |
 | A7 | EAS Starter | Custom domain / heavier hosting | **$19/mo** optional | Only if Free hosting is insufficient |
 | A8 | Apple Developer | iOS ship + IAP | **$99/year** | Phase 7 / 5 |
 | A9 | Google Play Console | Android ship + Play Billing | **$25 once** | Phase 7 / 5 |
@@ -37,9 +37,9 @@ Prices below were checked against official pages on 2026-08-14. Recheck before p
 - **Free option:** None for production API (new accounts may have a small credit). Gemini Free exists but **uses content to improve Google's products** — unacceptable for personal photos.  
 - **Expected development cost:** $5–30 of usage to iterate on prompts and fixtures. Set a billing hard cap in the OpenAI dashboard.  
 - **Expected monthly production cost:** Usage-based. `gpt-4.1-mini` is $0.40 / 1M input tokens and $1.60 / 1M output tokens (official model card, 2026).  
-- **Expected usage-based cost:** Rough V1 order of magnitude: clothing analysis ~$0.01–0.05/image; outfit parse+critique ~$0.01–0.04/generation. 1,000 analyses + 1,000 outfits ≈ **$20–90/mo** depending on image tokens. Meter in `ai_requests`.  
+- **Expected usage-based cost:** Unknown until measured. Do **not** treat $0.02–$0.09 as guaranteed. Ledger `ai_requests` is the source of truth.  
 - **Alternative:** Paid Gemini (content not used to improve products) — cheaper, slightly weaker guaranteed JSON. Anthropic Claude — strong vision, higher price, structured output via tools.  
-- **Recommendation:** Approve OpenAI with a **$20 development cap**. Do not raise until metering exists. Do not use Gemini Free.
+- **Recommendation:** OpenAI approved with a **$20 development cap**. Stop and request approval before exceeding it. Do not use Gemini Free.
 
 ---
 
@@ -53,7 +53,7 @@ Prices below were checked against official pages on 2026-08-14. Recheck before p
 - **Expected monthly production cost:** Pro **$25/mo** (includes Micro compute credit) for no pausing, backups, 8 GB disk, 100 GB storage.  
 - **Expected usage-based cost:** Storage and egress beyond plan. Images are the driver. Compress before upload.  
 - **Alternative:** Self-host Supabase (ops cost) or Postgres + Auth0 + S3 (more moving parts).  
-- **Recommendation:** Free for Phase 1–6 development. Approve Pro before inviting real users.
+- **Recommendation:** Stay on Free during development. Do **not** upgrade to Pro automatically. Idle pause after one week is acceptable in development. Ask before upgrading for production.
 
 ---
 

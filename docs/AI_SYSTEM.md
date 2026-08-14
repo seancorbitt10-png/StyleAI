@@ -39,7 +39,7 @@ Each task has:
 - timeout
 - retry policy
 
-Prompts live in `apps/app/src/server/ai/prompts/`. UI files must not contain prompt strings.
+Prompts live with the AI adapter (not in UI). UI files must not contain prompt strings. Domain services accept already-validated structured objects.
 
 ## Provider selection
 
@@ -53,7 +53,9 @@ Evaluated 2026-08-14 against official docs:
 | Cost | Low-mid (`gpt-4.1-mini`) | Often lower | $0 | Higher |
 | SDK | Official Node SDK | Official | Official | Official |
 
-**V1 default: OpenAI `gpt-4.1-mini`** for both vision and reasoning.
+**Initial adapter: OpenAI.** **Initial candidate model: `gpt-4.1-mini`** — not a permanent commitment. Model IDs are configuration. Domain/application code depends on `VisionProvider` and `ReasoningProvider` only.
+
+Do not assume a dollar cost per operation. Persist tokens and estimated USD on `ai_requests` and compare against reality. **Development spend cap: $20.** If implementation would exceed the cap, stop and request approval.
 
 Gemini Free is incompatible with "treat uploaded images as sensitive" plus "no use of user photos for model training unless consented."
 
@@ -69,7 +71,7 @@ Every `ai_requests` row stores:
 - duration_ms, status, error_class
 - estimated_cost_usd (from a small price table in config)
 
-This answers "how much does one outfit generation cost?" without logging image bytes or raw prompts that contain PII beyond what is required for debugging. Prefer storing hashes / truncated error strings.
+This answers "how much does one average outfit generation cost us?" from **measured** ledger data, not from the Phase 0 order-of-magnitude sketch.
 
 ## Cost control
 

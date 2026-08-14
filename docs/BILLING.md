@@ -35,27 +35,26 @@ Exact dollar prices are **not finalized**. Economics depend on measured `ai_requ
 
 ## Sources of truth
 
-| Platform | Purchase rail | Entitlement sync |
-| --- | --- | --- |
-| iOS | StoreKit via RevenueCat | Webhook + restore |
-| Android | Play Billing via RevenueCat | Webhook + restore |
-| Web | Stripe via RevenueCat Web Billing | Webhook |
+Entitlement is StyleAI's record. Purchase rails are adapters:
+
+```
+Mobile IAP  → RevenueCat → EntitlementService
+Web pay     → Stripe     → EntitlementService
+```
 
 `appUserID` = Supabase `user.id` on every platform.
 
-Client `isPro` booleans are display-only. API routes call `EntitlementService`.
+Client `isPro` booleans are display-only. HTTP adapters call `EntitlementService`.
 
-## Phase 5 vs live money
+RevenueCat and Stripe must not be imported from domain code. **Do not activate live payments without explicit approval.**
 
-Phase 5 implements:
+## Foundation vs live money
 
-- plan catalog
-- usage enforcement
-- subscription screen
-- webhook handler skeleton
-- restore flow wiring
+Phase 1 implements plan catalog, usage metering, and `EntitlementService`.
 
-Live purchases additionally need A8–A11 in [COST_AND_APPROVALS.md](./COST_AND_APPROVALS.md). Until then, Pro can only appear if a **server-side** entitlement row is written (e.g. founder grant). That is not a client cheat code.
+Later: subscription screen, webhook handlers, restore flow — still behind `BillingProvider`.
+
+Live purchases need A8–A11 in [COST_AND_APPROVALS.md](./COST_AND_APPROVALS.md) **and explicit approval**. Until then, Pro can only appear if a **server-side** entitlement row is written (e.g. founder grant). That is not a client cheat code.
 
 ## Lifecycle
 

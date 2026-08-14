@@ -1,0 +1,17 @@
+{
+  "name": "styleai",
+  "private": true,
+  "version": "0.0.1",
+  "packageManager": "pnpm@10.15.1",
+  "scripts": {
+    "start": "pnpm --filter @styleai/app start",
+    "typecheck": "pnpm -r --if-present typecheck",
+    "lint": "pnpm -r --if-present lint",
+    "test": "pnpm -r --if-present test",
+    "format": "prettier --write ."
+  },
+  "devDependencies": {
+    "prettier": "^3.6.2",
+    "typescript": "^5.9.2"
+  }
+}

@@ -4,131 +4,202 @@
 
 Describe how StyleAI is structured so another engineer can extend it without reverse-engineering tribal knowledge.
 
+## Owner-approved corrections (2026-08-14)
+
+These override earlier Phase 0 wording where they conflict:
+
+1. **eBay is the first product adapter, not the retailer strategy.** Domain models, outfit engine, ranking, and product UI depend only on normalized `Product` / `ProductProvider`. Broad retailer coverage remains the long-term requirement.
+2. **Domain and application services are host-agnostic.** Expo API Routes are the initial HTTP adapter. Moving the API host must not require rewriting domain logic.
+3. **OpenAI is the initial AI adapter.** `gpt-4.1-mini` is the first candidate model, not a permanent commitment. Costs are measured in the AI/usage ledger, not assumed.
+4. **Supabase Free for development.** Do not auto-upgrade. Idle pause is not a reason to upgrade during development.
+5. **Entitlements ship in foundation.** Live RevenueCat/Stripe payments stay off until explicit approval.
+6. **First-party analytics from day one.** Funnel events are defined in `@styleai/core`.
+7. **Use what the user already owns.** Product search fills genuine required-category gaps. Affiliate payout is never a ranking signal.
+
 ## Decision: one universal app
 
-Expo Router is a file-based router for Android, iOS, and web from one tree. Official docs recommend `create-expo-app` with Expo Router rather than a separate navigation library or separate web app.
+Expo Router is a file-based router for Android, iOS, and web from one tree.
 
-**Chosen:** `apps/app` as the only application.
+**Chosen:** `apps/app` as the only application (Expo SDK 57).
 
-**Rejected:** `apps/mobile` + `apps/web`. That would duplicate routes, design, and product flows. The specification allows a single universal app when it is the cleaner long-term DX. It is.
+**Rejected:** `apps/mobile` + `apps/web`. That would duplicate routes, design, and product flows.
 
-Platform-specific code is limited to:
+Platform-specific code is limited to camera vs file input, StoreKit / Play Billing vs web checkout, safe area / keyboard, and share / linking.
 
-- Camera vs file input
-- StoreKit / Play Billing vs web checkout
-- Safe area / keyboard
-- Share sheet / linking
+## Decision: modular monolith, host-agnostic core
 
-## Decision: modular monolith, not microservices
+V1 is one product with two runtimes:
 
-V1 is one deployable Expo server (API routes + static/SSR web) plus Supabase (Postgres, Auth, Storage). No Kubernetes, no event bus, no extra databases.
+- Universal Expo client
+- An application API (initially Expo Router API routes)
 
-## Repository layout (target after Phase 1)
+Postgres, Auth, and Storage are Supabase. There are no microservices, extra databases, or event buses.
+
+**The HTTP server is an adapter.** Business rules live in `@styleai/core` and must be importable from Node tests without Expo.
+
+```
+Client (Expo UI)
+  → Application API          HTTP adapter (Expo API Routes today; Node/other later)
+    → Application services   entitlements, usage, analytics, outfit orchestration
+      → Domain               scoring, filtering, gap detection, ranking
+      → Provider interfaces  Vision, Reasoning, Product, Billing, Auth
+        → Providers          OpenAI, eBay, future retailers, RevenueCat, Stripe, …
+```
+
+```
+packages/core               domain + application services + provider interfaces
+packages/ui                 design tokens and reusable UI
+apps/app/src/server         composition root (wires adapters); API routes only
+apps/app/src/adapters       host-agnostic provider implementations used by the composition root
+apps/app/app/api            thin HTTP handlers: parse, authn, call a service, respond
+```
+
+UI must not contain prompts, ranking, RLS, entitlements, or price math.
+
+`packages/core` must not import React Native, Expo, OpenAI, or eBay SDKs.
+
+`apps/app/src/server` must not be imported from UI routes. ESLint `no-restricted-imports` enforces this.
+
+## Repository layout
 
 ```
 /
-  apps/app/                     # Expo SDK 54 + Expo Router
-    app/                        # routes (file-based)
-      (public)/                 # landing, auth, legal, pricing
-      (app)/                    # authenticated tabs/stacks
-      api/                      # server routes (secrets OK here)
+  apps/app/                     # Expo SDK 57 + Expo Router
+    src/app/                    # file-based routes + HTTP adapters under src/app/api
     src/
+      client/                   # supabase browser/native client, session
       features/                 # screen composition only
-      server/                   # privileged adapters (do not import from UI)
-      lib/                      # client supabase, navigation helpers
-    app.json / eas.json
+      adapters/                 # OpenAI/eBay/etc. implementations (later phases)
+      server/                   # composition root for API routes
   packages/
-    core/                       # types, zod, domain, provider interfaces
+    core/                       # types, zod, domain, application, interfaces
     ui/                         # tokens + primitives
   supabase/
     migrations/
-    seed/                       # test-only, never production fake catalog
   docs/
-  scripts/
   .github/workflows/ci.yml
 ```
 
-`packages/core` must not import React Native. Domain tests run in Node.
-
-`apps/app/src/server` must not be imported from files under `app/` except `app/api/**`. ESLint `no-restricted-imports` will enforce this after Phase 1.
-
-## Dependency direction
-
-```
-UI screens → packages/ui, packages/core (types/schemas), api-client
-API routes → packages/core, src/server adapters
-Adapters   → provider SDKs, env
-Domain     → nothing (pure functions)
-```
-
-UI must not contain: prompts, ranking, RLS, entitlements, price math.
-
-## Provider interfaces (packages/core)
+## Provider interfaces (`packages/core`)
 
 ```ts
-VisionProvider
-ReasoningProvider
-ProductProvider
-ProductProviderRegistry
-BillingProvider
-AuthProvider          // thin; Supabase is the first impl
-UsageMeter
-EntitlementService
-VirtualTryOnProvider  // unimplemented; must not be required
+VisionProvider              // clothing / closet vision — OpenAI is the first impl
+ReasoningProvider           // structured JSON reasoning — OpenAI is the first impl
+ProductProvider             // search/get/normalize — eBay is the first impl
+ProductProviderRegistry     // fans out to N providers; engine never names a retailer
+BillingProvider             // purchase/restore/webhook — RevenueCat/Stripe later
+AuthProvider                // sign-up/in/out/reset/OAuth — Supabase is the first impl
+VirtualTryOnProvider        // unimplemented; must not be required for V1
 ```
 
-Configuration for models, timeouts, and prompt versions lives in one module (`packages/core` + server env), not scattered through screens.
+Application services (not providers): `EntitlementService`, `UsageMeter`, `AnalyticsService`.
+
+Configuration for models, timeouts, and prompt versions lives in one module. Model IDs are env/config, not hardcoded into domain functions.
+
+### Product boundary (hard requirement)
+
+Allowed in domain / outfit engine / ranking / product UI:
+
+- `Product`
+- `ProductSearchIntent`
+- `ProductProvider`
+- `ProductProviderRegistry`
+
+Not allowed:
+
+- eBay item IDs as a first-class domain type
+- `if (provider === 'ebay')` in scoring, gap detection, ranking, or screens
+- Marketplace-only fields leaking into `Outfit`
+
+Adapter-specific mapping (eBay category IDs, OAuth client-credentials, raw Browse payloads) lives only inside the eBay adapter. Raw provider payloads may be stored on the cache row for debugging; the engine never reads them.
+
+The long-term product requirement is **broad retailer coverage**. Additional `ProductProvider` implementations are added by registration, not by rewriting outfit generation.
+
+### AI boundary
+
+`VisionProvider` and `ReasoningProvider` take task + input + schema. The first adapter is OpenAI. The first candidate model is `gpt-4.1-mini`. Both are replaceable.
+
+Do not treat estimated per-operation cost as a guarantee. Persist token counts and estimated USD on `ai_requests` / `usage_events` and measure.
+
+Development spend cap: **$20**. Stop and ask before exceeding it.
+
+## Core product principle: use what the user already owns
+
+Gap detection is a domain function:
+
+- Recommend a purchase only when a **required category for the occasion is missing** from the wardrobe.
+- Do not recommend a purchase because it might make a complete outfit slightly better.
+- Prefer utilizing owned items even if a bought item would score higher in isolation.
+- Affiliate economics must never override relevance.
 
 ## Data flow: generate outfit
 
-1. Client POST `/api/outfits/generate` with JWT + constraints text/fields.
-2. Server validates input, checks entitlement + rate limit + usage.
-3. Parse constraints (AI → Zod `OutfitRequestSchema`).
-4. Load wardrobe rows for `auth.uid()` only; filter in SQL then in domain.
-5. Build candidates; score; pick top N.
-6. If a required category is empty, build a search intent.
-7. Registry search → normalize → upsert cache → rank.
-8. Persist outfit, items, usage, ai_requests.
-9. Return structured outfit DTO.
+1. HTTP adapter authenticates JWT and calls `OutfitGenerationService`.
+2. Service checks entitlement, rate limit, and usage quota.
+3. `ReasoningProvider` parses constraints → Zod `OutfitRequestSchema`.
+4. Load wardrobe for that user only; domain filter.
+5. Build candidates from owned items; score.
+6. `identifyRequiredGaps` — only missing required categories.
+7. If gaps exist, `ProductProviderRegistry.search` with a normalized intent.
+8. Domain rank (no affiliate signal) → persist outfit, items, usage, AI log, analytics.
 
-Failure of step 7 does not invent products. The response includes wardrobe items and `productSearchError`.
+Failure of step 7 does not invent products. The response includes owned items and a product-search error.
+
+## Analytics
+
+First-party `analytics_events`. No extra analytics vendor in V1. Event names are an allowlist in `@styleai/core`. See [ANALYTICS.md](./ANALYTICS.md).
+
+## Billing / entitlements (foundation)
+
+`plan_catalog` + `entitlements` + `usage_events` ship in Phase 1.
+
+```
+Mobile IAP  → RevenueCat → EntitlementService
+Web pay     → Stripe     → EntitlementService
+```
+
+RevenueCat and Stripe are future `BillingProvider` implementations. They are not imported by domain code. Live payments are **off** until explicit approval.
+
+Pro access requires a server-side `entitlements` row. The client cannot grant Pro.
 
 ## Environments
 
-| Name | Data | AI/products |
+| Name | Data | AI / products |
 | --- | --- | --- |
-| `development` | Owner's free Supabase project or local | Real keys if owner provided; otherwise fail closed |
-| `test` | Fixtures / local DB | Injected fake providers **only in test runners** |
+| `development` | Owner's **Supabase Free** project | Real keys if provided; otherwise fail closed |
+| `test` | Fixtures | Injected fakes **only in test runners** |
 | `staging` | Separate Supabase project | Real providers, non-prod keys |
-| `production` | Pro Supabase (recommended) | Real providers, fail if secrets missing |
+| `production` | Supabase (Free until owner approves Pro) | Real providers; fail if secrets missing |
 
 There is no `DEMO_MODE` flag.
+
+Supabase Free may pause after a week of inactivity. That is acceptable during development. Do not treat pause as a reason to upgrade.
 
 ## Replacement strategy
 
 | If we replace | Change |
 | --- | --- |
-| OpenAI → Anthropic/Gemini paid | New adapter implementing `VisionProvider` / `ReasoningProvider` |
-| eBay → another retailer API | New `ProductProvider`, register it |
-| Supabase Auth → other | New `AuthProvider`; JWT verification in API routes |
-| RevenueCat → other | New `BillingProvider`; entitlements table stays |
-| EAS Hosting → Node host | `expo-server` adapter; domain code unchanged |
+| OpenAI → another model vendor | New `VisionProvider` / `ReasoningProvider` adapter; config model IDs |
+| `gpt-4.1-mini` → another model | Config only, after quality/cost measurement |
+| eBay → additional/other retailers | New `ProductProvider`, register it |
+| Expo API Routes → Node/Fly/other | New HTTP adapter; `@styleai/core` unchanged |
+| Supabase Auth → other | New `AuthProvider` |
+| Future RevenueCat/Stripe | New `BillingProvider`; `entitlements` table stays |
 
 ## Failure modes
 
 | Failure | User sees | Operator sees |
 | --- | --- | --- |
-| Missing env in production | App refuses to start / API 503 "misconfigured" | Log: which key name is missing (not the value) |
-| AI timeout / invalid JSON | Recoverable error + retry | `ai_requests.status`, error class, duration |
-| Product provider down | Outfit without purchases + error banner | Provider, status code |
+| Missing env in production | App/API 503 "misconfigured" | Log: which **name** is missing, not the value |
+| AI timeout / invalid JSON | Recoverable error + retry | `ai_requests`, error class, duration |
+| Product provider down | Outfit from wardrobe + error | Provider id, status |
+| No product provider configured | Same — no fake products | `provider_not_configured` |
 | RLS / unauthorized | 401/403 | user id, route, request id |
 
-## Security considerations
+## Security
 
-See [SECURITY.md](./SECURITY.md). Summary: client never receives service-role or AI keys; RLS is not the only check; API routes re-validate ownership.
+See [SECURITY.md](./SECURITY.md). Client never receives service-role or AI keys. RLS is not the only check. HTTP adapters re-validate ownership.
 
-## Why SDK 54 instead of 57
+## Why SDK 57
 
-Expo's current docs: during the SDK 57 transition, `create-expo-app@latest` without a template still produces SDK 54, and Expo Go on physical devices tracks SDK 54. StyleAI development benefits from camera and image picker on a real phone via Expo Go before a development build exists.
-
-If the owner prefers SDK 57 (latest template, development builds from day one), that is a one-line decision change in Phase 1. It is not a rewrite.
+`create-expo-app@latest` currently scaffolds **SDK 57** (`expo-template-default@sdk-57`). Phase 1 follows that official default. Routes live under `apps/app/src/app` (Expo Router `src` directory). Bumping SDKs later is not a rewrite.
