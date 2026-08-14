@@ -60,6 +60,7 @@ Email auth needs no extra keys beyond Supabase. Enable email confirmations in th
 | `OPENAI_REASONING_MODEL` | default `gpt-4.1-mini` | |
 | `AI_REQUEST_TIMEOUT_MS` | default 30000 | |
 | `AI_MAX_RETRIES` | default 1 | Validation failure retry |
+| `AI_DEV_SPEND_CAP_USD` | default 20 | Stop and request approval before exceeding |
 
 ### Products (server)
 
