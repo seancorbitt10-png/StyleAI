@@ -24,13 +24,18 @@ Provider payloads are stored (JSONB `raw` or equivalent) so we can debug without
 
 ```
 ProductProviderRegistry
-  - ebay (V1)
-  - future: etsy, amazon_creators, affiliate_networks
+  → ProductProvider          // interface only
+      → EbayProductProvider  // first adapter (V1 validation)
+      → future retailers / affiliate networks
 ```
 
-The outfit engine only sees `Product`. Ranking does not take affiliate commission as a signal.
+The outfit engine, ranking engine, product UI, and domain `Product` type **must not** import or branch on eBay. Ranking does not take affiliate commission as a signal.
 
-## V1 provider: eBay Browse API
+**eBay is not the long-term retailer strategy.** It is the first official, terms-compliant source used to prove real URLs, prices, and images. Broad retailer coverage is the product requirement; new sources are additional `ProductProvider` implementations.
+
+## V1 first adapter: eBay Browse API
+
+eBay-specific category IDs, OAuth client-credentials, and Browse payload mapping belong **only** in the eBay adapter module.
 
 | | |
 | --- | --- |
@@ -71,7 +76,7 @@ Search result pages are not a permanent catalog. Persist products that were actu
 - Store `affiliate_url` only when a real affiliate program wraps the link.
 - UI: if `affiliate_url` is used, show a short disclosure ("We may earn a commission").
 - Clicks logged to `affiliate_clicks` with `url_kind`.
-- Ranking must not boost higher-commission items.
+- Ranking must not boost higher-commission items. Affiliate fields must not be inputs to the domain ranker.
 
 V1 eBay links are typically `product_url` only unless the owner later joins eBay Partner Network (separate approval).
 
@@ -92,4 +97,4 @@ V1 eBay links are typically `product_url` only unless the owner later joins eBay
 
 ## Replacement
 
-Add a class that implements `ProductProvider`, register it, map categories in one mapping file. No outfit-engine changes.
+Add a class that implements `ProductProvider` and register it. No outfit-engine, ranking, or product-UI changes that name the new retailer.

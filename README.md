@@ -6,16 +6,19 @@ Upload yourself and your wardrobe. Tell StyleAI what you are dressing for. Style
 
 This repository is the production V1 foundation. It is not a demo, a mock SaaS, or a UI-only prototype.
 
-## Current status: Phase 0 (plan only)
+## Current status: Phase 1 (foundation)
 
-**Substantial application code has not been written yet.**
+Phase 0 was approved with architecture corrections (provider boundaries, host-agnostic domain, analytics, entitlements, “use what you own”).
 
-The product specification requires an implementation plan and explicit approval before building. That plan is in this pull request.
+Phase 1 establishes the universal Expo app, real authentication, database + RLS, private storage, CI, tests, provider interfaces, logging, and plan/analytics foundations.
+
+**No paid services are activated.** Mocks exist only inside tests via dependency injection.
 
 | Document | Purpose |
 | --- | --- |
 | [docs/IMPLEMENTATION_PLAN.md](docs/IMPLEMENTATION_PLAN.md) | Master V1 plan — start here |
 | [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) | Repository, runtime, and module decisions |
+| [docs/ANALYTICS.md](docs/ANALYTICS.md) | Funnel events and privacy |
 | [docs/COST_AND_APPROVALS.md](docs/COST_AND_APPROVALS.md) | External services, money, and required approvals |
 | [docs/ENVIRONMENT.md](docs/ENVIRONMENT.md) | Environment variables |
 | [docs/AI_SYSTEM.md](docs/AI_SYSTEM.md) | AI pipeline, providers, prompts, cost tracking |
@@ -50,18 +53,17 @@ If an external provider is down, the app shows an error and retry state. It does
 - Hardcoded subscription access
 - Separate iOS / Android / web codebases
 
-## Setup (after Phase 1 exists)
-
-Phase 1 has not started. After it lands, expected local setup will be:
+## Setup
 
 ```sh
 pnpm install
 cp .env.example .env
-# fill in development values — see docs/ENVIRONMENT.md
+# Create a free Supabase project and paste URL + anon key.
+# Apply supabase/migrations/*.sql in the Supabase SQL editor.
 pnpm --filter @styleai/app start
 ```
 
-Do not create paid accounts or spend money while following this README. Cost-bearing steps are listed in [docs/COST_AND_APPROVALS.md](docs/COST_AND_APPROVALS.md) and require explicit owner approval.
+Do not create paid accounts or spend money while following this README. Cost-bearing steps are listed in [docs/COST_AND_APPROVALS.md](docs/COST_AND_APPROVALS.md). OpenAI is approved with a **$20 development cap** — not used in Phase 1.
 
 ## License
 

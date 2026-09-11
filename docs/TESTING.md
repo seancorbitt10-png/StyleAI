@@ -15,8 +15,10 @@ Vitest in `packages/core` and server domain modules:
 - Budget logic
 - Wardrobe filtering (season, formality, weather, exclusions)
 - Product normalization from a recorded eBay fixture JSON
-- Product ranking (affiliate payout must not change order)
+- Product ranking (affiliate payout must not change order; no retailer-specific branches)
+- Required-category gap detection (“use what the user already owns”)
 - Plan quota arithmetic
+- Analytics event allowlist
 - Env schema fail-closed behavior
 
 ### Integration
